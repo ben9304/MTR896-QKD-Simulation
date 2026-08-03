@@ -1,21 +1,4 @@
-"""
-MTR896 - Phase 2, point-to-point deliverable (literal scope).
 
-Methodology wording: "Un module Python fonctionnel simulant une liaison
-point-a-point simple dans Qiskit pur (sans bruit reseau)."
-
-This is a SIMPLE POINT-TO-POINT link: Alice -> Bob directly, with NO
-Charlie/intermediate nodes. This is the minimal building block before
-extending to the multi-hop Qline chain (Alice-Charlie-...-Bob), which
-belongs in a separate module (phase2_qiskit_nodes.py) once this simpler
-case is validated on its own.
-
-Encoding follows the same rotation rule used throughout this project
-(Doosti et al. 2024, Section 3.2 / Sena et al. 2024, Eq. 2-4), reduced
-to the two-party case:
-    theta_Alice = b_Alice * (pi/2) + r_Alice * pi
-    theta_Bob   = b_Bob   * (pi/2)
-"""
 
 import math
 import random
