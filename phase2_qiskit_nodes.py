@@ -1,31 +1,4 @@
-"""
-MTR896 - Phase 2 (scope-correct version): Qiskit node-level implementation.
 
-Phase 2 deliverable, per approved methodology:
-    "Implementer la logique quantique de chaque noeud (Alice, Bob et
-    noeuds intermediaires/repeteurs) sous forme de circuits Qiskit."
-    "Livrable intermediaire: Un module Python fonctionnel simulant une
-    liaison point-a-point simple dans Qiskit pur (sans bruit reseau)."
-
-This file does ONLY that:
-    - defines the quantum logic for each node role (Alice, intermediate
-      nodes, Bob) as Qiskit circuit operations
-    - runs ONE point-to-point / multi-hop exchange, pure Qiskit, no noise
-    - verifies the result is internally consistent (Doosti's XOR
-      invariant), since that is a property of the protocol LOGIC itself,
-      not a comparison to published results
-
-Explicitly OUT of scope here (belongs to later phases):
-    - noise/loss modeling                -> Phase 3 (SquidASM/NetSquid)
-    - QBER / secret key rate statistics  -> Phase 4 (benchmarking)
-    - comparison to Sena/Doosti figures  -> Phase 4 (validation)
-
-Protocol logic follows the general phase/rotation-accumulation rule
-described in both reference papers (not their specific worked-example
-values):
-    Sena et al. (2024), IEEE Photonics Journal, Eq. 2-4.
-    Doosti et al. (2024), IEEE QCNC, Section 3.2.
-"""
 
 import math
 import random
@@ -82,9 +55,7 @@ def bob_measure(qc: QuantumCircuit, qubit: int, clbit: int, bob: Node) -> None:
     qc.measure(qubit, clbit)
 
 
-# --------------------------------------------------------------------------
-# Build one point-to-point / multi-hop circuit (Phase 2 deliverable)
-# --------------------------------------------------------------------------
+
 
 def build_circuit(alice: Node, intermediates: List[Node], bob: Node) -> QuantumCircuit:
     """
@@ -98,11 +69,6 @@ def build_circuit(alice: Node, intermediates: List[Node], bob: Node) -> QuantumC
     bob_measure(qc, 0, 0, bob)
     return qc
 
-
-# --------------------------------------------------------------------------
-# Correctness check: Doosti's XOR invariant (a property of the LOGIC,
-# not a comparison against the papers' numerical results)
-# --------------------------------------------------------------------------
 
 def basis_match(alice: Node, intermediates: List[Node], bob: Node) -> bool:
     x = alice.basis
@@ -120,9 +86,7 @@ def expected_key_bit(alice: Node, intermediates: List[Node], bob: Node) -> int:
     return bit_sum ^ (basis_sum_mod4 // 2)
 
 
-# --------------------------------------------------------------------------
-# Run one round and report the node-level circuit + outcome
-# --------------------------------------------------------------------------
+
 
 if __name__ == "__main__":
     N_INTERMEDIATE = 2  # Alice - Node1 - Node2 - Bob
@@ -133,8 +97,8 @@ if __name__ == "__main__":
 
     qc = build_circuit(alice, intermediates, bob)
 
-    # Save the circuit diagram (this IS a Phase 2 artifact -- it shows
-    # the node-level quantum logic your methodology asks you to build).
+    # Save the circuit diagram (this IS a Phase 2 artifact 
+    
     fig = qc.draw("mpl")
     fig.savefig("qline_node_circuit.png", bbox_inches="tight", dpi=150)
     print("Circuit diagram saved to: qline_node_circuit.png\n")
