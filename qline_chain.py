@@ -158,6 +158,88 @@ EMISSION_DURATION_NS = 1e9 / SOURCE_REP_RATE_HZ      # = 10 ns per attempt
 
 _SEEDED_NS = False         # set by _seed_everything()
 
+
+# ==========================================================================
+# MONTREAL GEOGRAPHY  (optional: --route)
+# ==========================================================================
+# By default this file simulates a chain of UNIFORM hops (--hop). With
+# --route it instead uses the real per-hop distances of a named Montreal
+# route, so the geography becomes a simulation INPUT rather than an
+# interpretation applied to the results afterwards.
+#
+# Off-island sites are routed through an actual bridge or tunnel: fibre
+# does not cross water wherever it likes. Anjou->Varennes is 13.7 km
+# straight but 18.7 km routed, because it must detour to the
+# Louis-Hippolyte-La Fontaine tunnel.
+PLACES = {
+    "PointeClaire": (45.4486, -73.8200), "StLaurent": (45.5100, -73.6800),
+    "UdeM": (45.5048, -73.6168), "Loyola": (45.4581, -73.6397),
+    "McGill": (45.5048, -73.5772), "ETS": (45.4945, -73.5631),
+    "Concordia": (45.4972, -73.5789), "UQAM": (45.5088, -73.5617),
+    "Longueuil": (45.5300, -73.5100), "Brossard": (45.4500, -73.4650),
+    "Anjou": (45.6100, -73.5600), "Laval": (45.5600, -73.7450),
+    "Varennes": (45.6420, -73.4520), "Repentigny": (45.7420, -73.4500),
+}
+CROSSINGS = {
+    "MedericMartin": (45.5520, -73.7050), "PontViau": (45.5650, -73.6800),
+    "PapineauLeblanc": (45.5750, -73.6450), "Champlain": (45.4650, -73.5200),
+    "Victoria": (45.4800, -73.5250), "JacquesCartier": (45.5250, -73.5350),
+    "LaFontaine": (45.5800, -73.5100),
+}
+SERVES = {
+    "Laval": ["MedericMartin", "PontViau", "PapineauLeblanc"],
+    "Longueuil": ["JacquesCartier", "Victoria"],
+    "Brossard": ["Champlain", "Victoria"],
+    "Varennes": ["LaFontaine"], "Repentigny": ["LaFontaine"],
+}
+ROUTE_FACTOR = 1.40          # on-land duct meander
+_COORDS = {**PLACES, **CROSSINGS}
+
+ROUTES = {
+    # island / north spine, 9 sites
+    "ISLAND": ["PointeClaire", "Loyola", "ETS", "McGill", "UdeM",
+               "StLaurent", "Laval", "Anjou", "Repentigny"],
+    # south shore, 3 sites
+    "RIVESUD": ["Brossard", "Longueuil", "Varennes"],
+    # west-east island span only
+    "WESTEAST": ["PointeClaire", "StLaurent", "UdeM", "ETS", "McGill",
+                 "Anjou", "Repentigny"],
+}
+
+
+def geodesic_km(a, b):
+    R = 6371.0
+    la1, lo1 = map(math.radians, _COORDS[a])
+    la2, lo2 = map(math.radians, _COORDS[b])
+    h = (math.sin((la2 - la1) / 2) ** 2
+         + math.cos(la1) * math.cos(la2) * math.sin((lo2 - lo1) / 2) ** 2)
+    return 2 * R * math.asin(math.sqrt(h))
+
+
+def route_hop(a, b):
+    """(km, crossing_or_None) for one hop, through the shortest crossing."""
+    cands = SERVES.get(a, []) + SERVES.get(b, [])
+    if not cands:
+        return geodesic_km(a, b) * ROUTE_FACTOR, None
+    best, via = None, None
+    for x in dict.fromkeys(cands):
+        d = (geodesic_km(a, x) + geodesic_km(x, b)) * ROUTE_FACTOR
+        if best is None or d < best:
+            best, via = d, x
+    return best, via
+
+
+def route_hops(route):
+    """[(km, crossing), ...] for a named route or an explicit site list."""
+    sites = ROUTES[route] if route in ROUTES else route.split(",")
+    for s in sites:
+        if s not in PLACES:
+            raise SystemExit(f"unknown site: {s}\n"
+                             f"known: {', '.join(sorted(PLACES))}")
+    return sites, [route_hop(sites[i], sites[i+1])
+                   for i in range(len(sites)-1)]
+
+
 # ==========================================================================
 # Verified protocol relations
 # ==========================================================================
@@ -192,17 +274,19 @@ def qdevice_block(hw, n_qubits):
   two_qubit_gate_depolar_prob: {hw.depolar_2q}"""
 
 
-def make_config(n_charlies, hw, hop_km, link_type="heralded"):
+def make_config(n_charlies, hw, hops, link_type="heralded"):
+    """`hops` is a list of per-link lengths in km (len == n_charlies+1)."""
+    if not isinstance(hops, (list, tuple)):
+        hops = [hops] * (n_charlies + 1)
     names = node_names(n_charlies)
     n_links = len(names) - 1
 
     out = [f"# MTR896 Qline chain, {n_charlies} Charlie(s),"
            f" profile {hw.name}",
            f"# path  : {' -> '.join(names)}",
-           f"# hop   : {hop_km:.2f} km each,"
-           f" {n_links} hops, {hop_km*n_links:.2f} km total",
-           f"# fibre : {ATTENUATION:.4f} dB/km"
-           f" -> {hop_km*n_links*ATTENUATION:.2f} dB",
+           f"# hops  : {', '.join(f'{h:.1f}' for h in hops)} km"
+           f"  ({sum(hops):.1f} km total)",
+           f"# fibre : {ATTENUATION:.4f} dB/km",
            f"# nodes : {hw.node_loss_db} dB/Charlie"
            f" -> {n_charlies*hw.node_loss_db:.2f} dB",
            "",
@@ -213,7 +297,7 @@ def make_config(n_charlies, hw, hop_km, link_type="heralded"):
                    f" qdevice_cfg: {{<<: *qdevice}}}}")
     out += ["", "links:"]
 
-    for i in range(n_links):
+    for i, hop_km in enumerate(hops):
         # Fixed loss on this hop: connectors at both ends, plus the
         # insertion loss of the Charlie this hop terminates at (not Bob).
         fixed_db = CONNECTORS_PER_HOP * CONNECTOR_DB
@@ -394,7 +478,7 @@ def build_programs(n_charlies):
 # Runner
 # ==========================================================================
 
-def budget_db(n_charlies, hw, hop_km):
+def budget_db(n_charlies, hw, hops):
     """PER-LINK optical budget - the physically meaningful quantity.
 
     In a repeater chain each heralded link is independent and the optical
@@ -405,7 +489,9 @@ def budget_db(n_charlies, hw, hop_km):
 
     Returns (fibre_per_link, connectors_per_link, node, total_per_link).
     """
-    fibre = hop_km * ATTENUATION
+    if not isinstance(hops, (list, tuple)):
+        hops = [hops]
+    fibre = max(hops) * ATTENUATION          # worst link sets the budget
     conn = CONNECTORS_PER_HOP * CONNECTOR_DB
     nodes = hw.node_loss_db
     return fibre, conn, nodes, fibre + conn + nodes
@@ -443,14 +529,14 @@ def _seed_everything(seed):
     return _SEEDED_NS
 
 
-def simulate(n_charlies, hw, hop_km, link_type, rounds, seed, quiet=False):
+def simulate(n_charlies, hw, hops, link_type, rounds, seed, quiet=False):
     """Return (sifted, errors, rounds). QBER = errors / sifted."""
     _, _, _, StackNetworkConfig, run = _load_squidasm()
     Alice, Charlies, Bob = build_programs(n_charlies)
     names = node_names(n_charlies)
 
     _seed_everything(seed)
-    path = _write_cfg(make_config(n_charlies, hw, hop_km, link_type))
+    path = _write_cfg(make_config(n_charlies, hw, hops, link_type))
     try:
         cfg = StackNetworkConfig.from_file(path)
     finally:
@@ -489,9 +575,9 @@ def simulate(n_charlies, hw, hop_km, link_type, rounds, seed, quiet=False):
     return sifted, errors, rounds, _elapsed_ns
 
 
-def cmd_check(n_charlies, hw, hop_km, link_type):
+def cmd_check(n_charlies, hw, hops, link_type):
     _, _, _, StackNetworkConfig, _ = _load_squidasm()
-    path = _write_cfg(make_config(n_charlies, hw, hop_km, link_type))
+    path = _write_cfg(make_config(n_charlies, hw, hops, link_type))
     try:
         StackNetworkConfig.from_file(path)
     except Exception as e:
@@ -505,11 +591,11 @@ def cmd_check(n_charlies, hw, hop_km, link_type):
         if os.path.exists(path):
             os.remove(path)
     print(f"SCHEMA CHECK PASSED  ({link_type}, {n_charlies} Charlie(s),"
-          f" profile {hw.name}, hop {hop_km:g} km)")
+          f" profile {hw.name})")
     return 0
 
 
-def repeated(n_charlies, hw, hop_km, link_type, rounds, seed, repeats):
+def repeated(n_charlies, hw, hops, link_type, rounds, seed, repeats):
     """Pool `repeats` independent runs. Returns pooled counts plus the
     per-run QBER list, so the spread ACROSS runs can be reported - that is
     the honest uncertainty, since sim_reset() defeats seeding."""
@@ -517,7 +603,7 @@ def repeated(n_charlies, hw, hop_km, link_type, rounds, seed, repeats):
     el = 0.0
     qs = []
     for i in range(repeats):
-        s_, e_, r_, ela = simulate(n_charlies, hw, hop_km, link_type,
+        s_, e_, r_, ela = simulate(n_charlies, hw, hops, link_type,
                                    rounds, seed + i)
         tot_s += s_; tot_e += e_; tot_r += r_
         if ela:
@@ -527,19 +613,26 @@ def repeated(n_charlies, hw, hop_km, link_type, rounds, seed, repeats):
     return tot_s, tot_e, tot_r, (el or None), qs
 
 
-def cmd_run(n_charlies, hw, hop_km, link_type, rounds, seed, repeats=1):
-    fibre, conn, nodes, total = budget_db(n_charlies, hw, hop_km)
+def cmd_run(n_charlies, hw, hops, link_type, rounds, seed, repeats=1,
+            sites=None):
+    if not isinstance(hops, (list, tuple)):
+        hops = [hops] * (n_charlies + 1)
+    fibre, conn, nodes, total = budget_db(n_charlies, hw, hops)
     sifted, errors, rounds, elapsed, qs = repeated(
-        n_charlies, hw, hop_km, link_type, rounds, seed, repeats)
+        n_charlies, hw, hops, link_type, rounds, seed, repeats)
     names = node_names(n_charlies)
     print("=" * 72)
     print(f"  Qline chain: {n_charlies} Charlie(s)   profile: {hw.name}"
           f"   link: {link_type}")
     print("=" * 72)
-    print(f"  path      : {' -> '.join(names)}")
-    print(f"  hops      : {n_charlies+1} x {hop_km:g} km"
-          f" = {hop_km*(n_charlies+1):g} km")
-    print(f"  per-link  : fibre {fibre:.2f} + connectors {conn:.2f}"
+    print(f"  path      : {' -> '.join(sites or names)}")
+    if len(set(hops)) == 1:
+        print(f"  hops      : {len(hops)} x {hops[0]:g} km"
+              f" = {sum(hops):g} km")
+    else:
+        print(f"  hops      : {', '.join(f'{h:.1f}' for h in hops)} km"
+              f"   = {sum(hops):.1f} km  [REAL GEOGRAPHY]")
+    print(f"  worst link: fibre {fibre:.2f} + connectors {conn:.2f}"
           f" + node {nodes:.2f} = {total:.2f} dB   [INPUT]")
     print(f"              (budget RESETS at every node - there is no"
           f" cumulative dB)")
@@ -609,7 +702,7 @@ def cmd_sweep(hw_names, hop_km, link_type, rounds, seed, max_n,
             _, _, _, total = budget_db(N, hw, hop_km)
             try:
                 sifted, errors, _, elapsed, _qs = repeated(
-                    N, hw, hop_km, link_type, rounds, seed, repeats)
+                    N, hw, [hop_km]*(N+1), link_type, rounds, seed, repeats)
             except Exception as e:
                 print(f"    {N:>3}  simulation failed:"
                       f" {type(e).__name__}: {e}")
@@ -682,7 +775,12 @@ def main():
     ap.add_argument("--sweep", action="store_true")
     ap.add_argument("--charlies", type=int, default=2)
     ap.add_argument("--hop", type=float, default=DEFAULT_HOP_KM,
-                    help="km per hop (default 10)")
+                    help="km per hop, uniform (default 10)")
+    ap.add_argument("--route", default=None,
+                    help="named Montreal route (" + ", ".join(ROUTES)
+                         + ") or a comma-separated list of sites. Uses the "
+                           "REAL per-hop distances instead of --hop, so the "
+                           "geography is a simulation input.")
     ap.add_argument("--profile", default="modest", choices=list(PROFILES))
     ap.add_argument("--all-profiles", action="store_true",
                     help="sweep every profile")
@@ -725,14 +823,26 @@ def main():
         print("  (one-at-a-time study - results are NOT the stock profile)")
     else:
         hw = base
+    sites = None
+    hops = a.hop
+    ncharlies = a.charlies
+    if a.route:
+        sites, detail = route_hops(a.route)
+        hops = [d[0] for d in detail]
+        ncharlies = len(sites) - 2
+        vias = [d[1] for d in detail if d[1]]
+        print(f"ROUTE: {' -> '.join(sites)}")
+        print(f"  {len(sites)} sites, {ncharlies} Charlies, "
+              f"{sum(hops):.1f} km"
+              + (f", crossings: {', '.join(vias)}" if vias else ""))
     if a.emit:
-        print(make_config(a.charlies, hw, a.hop, a.link))
+        print(make_config(ncharlies, hw, hops, a.link))
         return 0
     if a.check:
-        return cmd_check(a.charlies, hw, a.hop, a.link)
+        return cmd_check(ncharlies, hw, hops, a.link)
     if a.run:
-        return cmd_run(a.charlies, hw, a.hop, a.link, a.rounds,
-                       a.seed, a.repeats)
+        return cmd_run(ncharlies, hw, hops, a.link, a.rounds,
+                       a.seed, a.repeats, sites)
     if a.sweep:
         hws = list(PROFILES) if a.all_profiles else [hw]
         return cmd_sweep(hws, a.hop, a.link, a.rounds, a.seed,

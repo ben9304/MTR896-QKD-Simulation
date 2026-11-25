@@ -87,10 +87,44 @@ class Hardware:
         self.depolar_2q = depolar_2q        # two-qubit gate depolarisation
 
 
+# ==========================================================================
+# NODE INSERTION LOSS - built from component datasheets, NOT from any
+# reference paper. (The previous 5.0 / 3.5 / 3.0 dB were lifted from
+# Sena et al.'s results section and have been replaced.)
+#
+#   Phase modulator, Exail/iXblue MPX-MPZ series, 1550 nm, no connectors:
+#       MPZ-LN-10               2.5 dB typ   3.5 dB max
+#       MPZ-LN-10 "LIL" option  2.0 dB typ   2.5 dB max
+#   FC/APC connector            0.25 dB each, 2 per node
+#   Optical switch, Agiltron NanoSpeed 1x1, 1260-1650 nm:
+#       0.6 dB typ, 1.0 dB max  (only if a bypass path is modelled -
+#                                not included in the figures below)
+#
+# -> modest   3.5 (max) + 0.50 = 4.0 dB
+#    good     2.5 (typ) + 0.50 = 3.0 dB
+#    advanced 2.0 (LIL) + 0.50 = 2.5 dB
+#
+# DEPLOYMENT NOTE, Montreal-specific: the Agiltron switch is specified
+# -5 to +45 C (degraded to -10..+70 C), and its insertion loss drifts up
+# to 0.5 dB with temperature. Montreal reaches -25 C in winter, so
+# intermediate nodes cannot live in unheated roadside enclosures - they
+# need ODFs, central offices or campus buildings. That constrains WHERE
+# a Charlie can be sited, independently of where the geometry wants one.
+#
+# An EDFA cannot substitute for any of this: no-cloning forbids
+# amplifying the quantum channel, and a single photon at 1 MHz sits
+# ~-99 dBm, about 69 dB below a preamp's minimum specified input.
+# Amplifiers belong on the classical channels only.
+# ==========================================================================
+MODULATOR_DB   = {"modest": 3.5, "good": 2.5, "advanced": 2.0}
+CONNECTOR_DB_N = 0.25     # per FC/APC connector
+CONNECTORS_PER_NODE = 2
+SWITCH_DB      = 0.6      # Agiltron NanoSpeed 1x1 typ, bypass only
+
 PROFILES = {
-    "modest":   Hardware("modest",   0.92, 1e-4, 0.90, 5.0, 0.010, 0.050),
-    "good":     Hardware("good",     0.98, 1e-4, 0.90, 3.5, 0.005, 0.020),
-    "advanced": Hardware("advanced", 0.99, 1e-5, 0.95, 3.0, 0.001, 0.005),
+    "modest":   Hardware("modest",   0.92, 1e-4, 0.90, 4.0, 0.010, 0.050),
+    "good":     Hardware("good",     0.98, 1e-4, 0.90, 3.0, 0.005, 0.020),
+    "advanced": Hardware("advanced", 0.99, 1e-5, 0.95, 2.5, 0.001, 0.005),
 }
 
 # Fibre loss, built up from independently cited component specifications.

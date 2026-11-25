@@ -88,6 +88,32 @@ Doubling either the visibility error or the gate error costs 3–4 nodes;
 a 20 % rise in insertion loss costs 1. **Error accumulation in the
 quantum operations, not optical loss, sets the chain length.**
 
+### Real Montréal geography (simulated, not interpolated)
+
+Run with `--route`, using measured per-hop distances through actual
+bridge and tunnel crossings rather than uniform spacing.
+
+| Route | Nodes | Charlies | Span | Worst link | QBER advanced | QBER good |
+|---|---|---|---|---|---|---|
+| ISLAND | 9 | 7 | 110.1 km | 11.66 dB | **6.81 % ± 0.56 %** | 16.67 % ± 0.84 % |
+| RIVESUD | 3 | 1 | 35.3 km | 8.07 dB | **1.21 % ± 0.70 %** | — |
+
+ISLAND: Pointe-Claire → Loyola → ÉTS → McGill → UdeM → Saint-Laurent →
+Laval → Anjou → Repentigny, crossing at Médéric-Martin,
+Papineau-Leblanc and La Fontaine. Hops 19.7, 10.1, 2.2, 4.3, 6.9,
+11.6, 21.9, 33.2 km — a factor of fifteen between shortest and longest,
+with the 33.2 km Anjou–Repentigny link setting the budget alone.
+
+RIVESUD: Brossard → Longueuil → Varennes, crossing at Victoria and
+La Fontaine. Hops 16.0 and 19.3 km.
+
+**Uniform spacing flatters the result.** At the same node count (N = 7)
+uniform 10 km hops give 5.56 %; real geography gives 6.81 %. The
+1.25-point difference comes from the single long hop.
+
+**The island route requires advanced hardware.** Identical geography,
+6.81 % on advanced against 16.67 % on good.
+
 ### Montréal implications
 
 | Route | Distance | Hops @25 km | Result |
